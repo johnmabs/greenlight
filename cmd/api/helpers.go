@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -142,4 +144,30 @@ func (app *application) readInt(qs url.Values, key string, defaultValue int, v *
 	}
 
 	return i
+}
+
+// The background() helper accepts an arbitrary function as a parameter.
+func (app *application) background(ctx context.Context, name string, fn func(ctx context.Context) error) {
+	app.wg.Add(1)
+
+	go func() {
+		defer app.wg.Done()
+
+		defer func() {
+			if err := recover(); err != nil {
+				app.logger.Error("panic recovered",
+					"task", name,
+					"error", err,
+					"stack", string(debug.Stack()),
+				)
+			}
+		}()
+
+		if err := fn(ctx); err != nil {
+			app.logger.Error("background task failed",
+				"task", name,
+				"error", err,
+			)
+		}
+	}()
 }
